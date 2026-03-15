@@ -168,3 +168,6 @@ logs/
 # Configuration overrides
 config.local.yaml
 config.local.yml
+# Generated SVG output
+generated_svgs/*
+!generated_svgs/.gitkeep

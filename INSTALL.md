@@ -63,6 +63,37 @@ Copy `windsurf_config.json` to:
 - **Windows**: `%USERPROFILE%\.codeium\windsurf\mcp_config.json`
 - **Linux**: `~/.codeium/windsurf/mcp_config.json`
 
+#### GitHub Copilot (VS Code)
+
+A config is provided in `github-mcp-config.json`. VS Code Copilot uses a `servers` key and reads from `.vscode/mcp.json` in your workspace (or the user-level equivalent).
+
+**Option 1 — Workspace config** (copy into your project):
+```bash
+cp github-mcp-config.json /path/to/your/project/.vscode/mcp.json
+```
+
+**Option 2 — User-level config**:
+```bash
+mkdir -p ~/.vscode
+cp github-mcp-config.json ~/.vscode/mcp.json
+```
+
+The config format (`github-mcp-config.json`):
+```json
+{
+  "servers": {
+    "inkscape-mcp": {
+      "command": "uvx",
+      "args": ["inkscape-mcp"]
+    }
+  }
+}
+```
+
+Restart VS Code after placing the file. The inkscape-mcp tools will appear in GitHub Copilot Chat.
+
+> **Note**: `gh extension install shuymn/gh-mcp` is available as a convenience wrapper that runs the GitHub MCP server using your existing `gh` authentication — it is separate from inkscape-mcp.
+
 ## 🔧 System Requirements
 
 ### Prerequisites
@@ -133,6 +164,10 @@ export INKSCAPE_LOG_LEVEL="INFO"
 
 # Timeout for Inkscape operations (seconds)
 export INKSCAPE_TIMEOUT="30"
+
+# Recraft API key for AI SVG generation with nano-banana-pro model
+# Obtain from https://app.recraft.ai/profile/api
+export RECRAFT_API_TOKEN="your_recraft_api_token_here"
 ```
 
 ### Configuration File
@@ -303,4 +338,4 @@ mcp:
 
 **Installation verified on**: Windows 10/11, macOS 12+, Ubuntu 18.04+
 **Last tested**: January 15, 2026
-**Supported MCP clients**: Claude Desktop, Windsurf, Cline, other MCPB-compatible clients
+**Supported MCP clients**: Claude Desktop, Windsurf, GitHub Copilot (VS Code), Cline, other MCPB-compatible clients
