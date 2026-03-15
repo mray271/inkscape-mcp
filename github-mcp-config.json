@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "inkscape-mcp": {
+      "command": "uvx",
+      "args": ["inkscape-mcp"]
+    }
+  }
+}
