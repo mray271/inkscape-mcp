@@ -171,3 +171,4 @@ config.local.yml
 # Generated SVG output
 generated_svgs/*
 !generated_svgs/.gitkeep
+notebooks/generated_svgs/
