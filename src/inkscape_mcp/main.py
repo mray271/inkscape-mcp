@@ -24,7 +24,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from fastmcp import FastMCP
 
@@ -35,6 +35,10 @@ from .logging_config import setup_logging
 # Import portmanteau tools (v3.0.0 architecture)
 from .tools import (
     PORTMANTEAU_TOOLS,
+    inkscape_file,
+    inkscape_vector,
+    inkscape_analysis,
+    inkscape_system,
 )
 
 # Legacy imports for backwards compatibility
@@ -238,21 +242,52 @@ class InkscapeMCPServer:
             async def inkscape_file_tool(
                 operation: str,
                 input_path: str = None,
-                output_path: str = None,
-                format: str = None,
-                quality: int = 95,
-                compression: int = 6,
-                progressive: bool = False,
+                output_path: str = "",
+                format: str = "",
+                validate_structure: bool = True,
             ) -> Dict[str, Any]:
                 """File operations: load, save, convert, info, validate, list_formats."""
                 return await inkscape_file(
                     operation=operation,
-                    input_path=input_path,
+                    input_path=input_path or "",
                     output_path=output_path,
                     format=format,
-                    quality=quality,
-                    compression=compression,
-                    progressive=progressive,
+                    validate_structure=validate_structure,
+                    cli_wrapper=self.cli_wrapper,
+                    config=self.config,
+                )
+
+            @self.mcp.tool()
+            async def inkscape_vector_tool(
+                operation: str,
+                input_path: str = "",
+                output_path: str = "",
+                object_id: str = "",
+                object_ids: Optional[List[str]] = None,
+                select_all: bool = False,
+                operation_type: str = "",
+                barcode_data: str = "",
+                threshold: float = 1.0,
+                dpi: int = 96,
+                x: float = 300,
+                y: float = 200,
+                units: str = "px",
+            ) -> Dict[str, Any]:
+                """Vector operations: trace_image, apply_boolean, path_simplify, path_clean, render_preview, measure_object, query_document, generate_barcode_qr, and more."""
+                return await inkscape_vector(
+                    operation=operation,
+                    input_path=input_path,
+                    output_path=output_path,
+                    object_id=object_id,
+                    object_ids=object_ids,
+                    select_all=select_all,
+                    operation_type=operation_type,
+                    barcode_data=barcode_data,
+                    threshold=threshold,
+                    dpi=dpi,
+                    x=x,
+                    y=y,
+                    units=units,
                     cli_wrapper=self.cli_wrapper,
                     config=self.config,
                 )
@@ -272,21 +307,7 @@ class InkscapeMCPServer:
                 fill_color: str = "transparent",
             ) -> Dict[str, Any]:
                 """Transforms: resize, crop, rotate, flip, scale, perspective, autocrop."""
-                return await inkscape_transform(
-                    operation=operation,
-                    input_path=input_path,
-                    output_path=output_path,
-                    width=width,
-                    height=height,
-                    maintain_aspect=maintain_aspect,
-                    x=x,
-                    y=y,
-                    degrees=degrees,
-                    direction=direction,
-                    fill_color=fill_color,
-                    cli_wrapper=self.cli_wrapper,
-                    config=self.config,
-                )
+                return {"success": False, "error": "inkscape_transform_tool is not yet implemented"}
 
             @self.mcp.tool()
             async def inkscape_color_tool(
@@ -304,22 +325,7 @@ class InkscapeMCPServer:
                 mode: str = "luminosity",
             ) -> Dict[str, Any]:
                 """Color adjustments: brightness_contrast, levels, curves, hue_saturation, etc."""
-                return await inkscape_color(
-                    operation=operation,
-                    input_path=input_path,
-                    output_path=output_path,
-                    brightness=brightness,
-                    contrast=contrast,
-                    hue=hue,
-                    saturation=saturation,
-                    lightness=lightness,
-                    gamma=gamma,
-                    levels=levels,
-                    threshold=threshold,
-                    mode=mode,
-                    cli_wrapper=self.cli_wrapper,
-                    config=self.config,
-                )
+                return {"success": False, "error": "inkscape_color_tool is not yet implemented"}
 
             @self.mcp.tool()
             async def inkscape_filter_tool(
@@ -332,17 +338,7 @@ class InkscapeMCPServer:
                 effect: str = "oilify",
             ) -> Dict[str, Any]:
                 """Filters: blur, sharpen, noise, edge_detect, artistic, enhance, distort."""
-                return await inkscape_filter(
-                    operation=operation,
-                    input_path=input_path,
-                    output_path=output_path,
-                    radius=radius,
-                    amount=amount,
-                    method=method,
-                    effect=effect,
-                    cli_wrapper=self.cli_wrapper,
-                    config=self.config,
-                )
+                return {"success": False, "error": "inkscape_filter_tool is not yet implemented"}
 
             @self.mcp.tool()
             async def inkscape_layer_tool(
@@ -356,36 +352,17 @@ class InkscapeMCPServer:
                 visible: bool = True,
             ) -> Dict[str, Any]:
                 """Layer management: create, duplicate, delete, merge, flatten, reorder, info."""
-                return await inkscape_layer(
-                    operation=operation,
-                    input_path=input_path,
-                    output_path=output_path,
-                    layer_name=layer_name,
-                    layer_index=layer_index,
-                    opacity=opacity,
-                    blend_mode=blend_mode,
-                    visible=visible,
-                    cli_wrapper=self.cli_wrapper,
-                    config=self.config,
-                )
+                return {"success": False, "error": "inkscape_layer_tool is not yet implemented"}
 
             @self.mcp.tool()
             async def inkscape_analysis_tool(
                 operation: str,
                 input_path: str,
-                compare_path: str = None,
-                include_histogram: bool = True,
-                analysis_type: str = "comprehensive",
-                report_format: str = "detailed",
             ) -> Dict[str, Any]:
-                """Image analysis: quality, statistics, histogram, compare, detect_issues, report."""
+                """Document analysis: statistics, validate, dimensions, quality, objects, structure."""
                 return await inkscape_analysis(
                     operation=operation,
                     input_path=input_path,
-                    compare_path=compare_path,
-                    include_histogram=include_histogram,
-                    analysis_type=analysis_type,
-                    report_format=report_format,
                     cli_wrapper=self.cli_wrapper,
                     config=self.config,
                 )
@@ -403,33 +380,23 @@ class InkscapeMCPServer:
                 max_workers: int = 4,
             ) -> Dict[str, Any]:
                 """Batch processing: resize, convert, process, watermark, rename, optimize."""
-                return await inkscape_batch(
-                    operation=operation,
-                    input_directory=input_directory,
-                    output_directory=output_directory,
-                    width=width,
-                    height=height,
-                    output_format=output_format,
-                    quality=quality,
-                    file_pattern=file_pattern,
-                    max_workers=max_workers,
-                    cli_wrapper=self.cli_wrapper,
-                    config=self.config,
-                )
+                return {"success": False, "error": "inkscape_batch_tool is not yet implemented"}
 
             @self.mcp.tool()
             async def inkscape_system_tool(
                 operation: str,
-                topic: str = None,
-                level: str = "basic",
-                cache_action: str = "status",
+                extension_id: Optional[str] = None,
+                extension_params: Optional[Dict[str, Any]] = None,
+                input_file: Optional[str] = None,
+                output_file: Optional[str] = None,
             ) -> Dict[str, Any]:
-                """System: status, help, diagnostics, cache, config, performance, tools, version."""
+                """System operations: status, help, diagnostics, version, config, list_extensions."""
                 return await inkscape_system(
                     operation=operation,
-                    topic=topic,
-                    level=level,
-                    cache_action=cache_action,
+                    extension_id=extension_id,
+                    extension_params=extension_params,
+                    input_file=input_file,
+                    output_file=output_file,
                     cli_wrapper=self.cli_wrapper,
                     config=self.config,
                 )
@@ -437,6 +404,7 @@ class InkscapeMCPServer:
             # Track registered tools
             self.tools = {
                 "inkscape_file": inkscape_file_tool,
+                "inkscape_vector": inkscape_vector_tool,
                 "inkscape_transform": inkscape_transform_tool,
                 "inkscape_color": inkscape_color_tool,
                 "inkscape_filter": inkscape_filter_tool,

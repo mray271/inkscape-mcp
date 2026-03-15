@@ -10,12 +10,119 @@ import os
 import json
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+from fastmcp import Context
 from datetime import datetime
+
+import httpx
 
 from .logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Recraft API constants
+# ---------------------------------------------------------------------------
+
+RECRAFT_API_URL = "https://external.api.recraft.ai/v1/images/generations"
+
+# Maps internal style_preset → Recraft style name for vector generation.
+# All map to "vector_illustration" family; substyle further refines the look.
+_RECRAFT_STYLE_MAP: Dict[str, str] = {
+    "geometric":  "vector_illustration",
+    "organic":    "vector_illustration",
+    "technical":  "vector_illustration",
+    "heraldic":   "vector_illustration",
+    "abstract":   "vector_illustration",
+}
+
+# Maps internal quality level → Recraft model ID.
+# Pro variant used for high/ultra for better fidelity.
+_RECRAFT_QUALITY_MODEL: Dict[str, str] = {
+    "draft":    "recraftv4_vector",
+    "standard": "recraftv4_vector",
+    "high":     "recraftv4_pro_vector",
+    "ultra":    "recraftv4_pro_vector",
+}
+
+# Valid aspect ratios supported by all Recraft models (w, h integers, reduced).
+# Vector models accept only these aspect-ratio strings; raster V4 models use pixel sizes.
+_RECRAFT_VALID_ASPECTS: List[Tuple[int, int]] = [
+    (1, 1), (2, 1), (1, 2), (3, 2), (2, 3), (4, 3), (3, 4),
+    (5, 4), (4, 5), (6, 10), (14, 10), (10, 14), (16, 9), (9, 16),
+]
+
+
+def _nearest_recraft_aspect(width: int, height: int) -> str:
+    """Return the Recraft aspect-ratio string (e.g. '3:4') closest to width/height."""
+    target = width / height
+    w, h = min(_RECRAFT_VALID_ASPECTS, key=lambda a: abs((a[0] / a[1]) - target))
+    return f"{w}:{h}"
+
+
+async def _call_recraft_api(
+    description: str,
+    style_preset: str,
+    width: int,
+    height: int,
+    quality: str,
+) -> str:
+    """
+    Call the Recraft vector generation API and return the SVG content as a string.
+
+    Raises:
+        ValueError: If RECRAFT_API_TOKEN is not set.
+        httpx.HTTPStatusError: If the API returns an error response.
+    """
+    api_token = os.environ.get("RECRAFT_API_TOKEN", "").strip()
+    if not api_token:
+        raise ValueError(
+            "RECRAFT_API_TOKEN environment variable is not set. "
+            "Set it to your Recraft API key to enable AI SVG generation."
+        )
+
+    recraft_model = _RECRAFT_QUALITY_MODEL.get(quality, "recraftv4_vector")
+    size = _nearest_recraft_aspect(width, height)
+
+    # Styles are only supported on V2/V3 models; V4 models reject the field entirely.
+    is_v4 = recraft_model.startswith("recraftv4")
+    recraft_style = None if is_v4 else _RECRAFT_STYLE_MAP.get(style_preset)
+
+    payload: Dict[str, Any] = {
+        "prompt": description,
+        "model": recraft_model,
+        "size": size,
+        "response_format": "url",
+    }
+    if recraft_style:
+        payload["style"] = recraft_style
+
+    logger.info(f"Calling Recraft API: model={recraft_model}, style={recraft_style}, size={size}")
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(
+            RECRAFT_API_URL,
+            headers={
+                "Authorization": f"Bearer {api_token}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        if response.is_error:
+            raise httpx.HTTPStatusError(
+                f"Recraft API {response.status_code}: {response.text}",
+                request=response.request,
+                response=response,
+            )
+        result = response.json()
+
+        svg_url = result["data"][0]["url"]
+        logger.info(f"Recraft generation complete, downloading SVG from {svg_url}")
+
+        svg_response = await client.get(svg_url)
+        svg_response.raise_for_status()
+        return svg_response.text
 
 
 def register_agentic_tools(mcp_instance=None):
@@ -26,7 +133,7 @@ def register_agentic_tools(mcp_instance=None):
 
     @mcp_instance.tool()
     async def generate_svg(
-        ctx: Any,
+        ctx: Context,
         description: str = "a simple geometric design",
         style_preset: str = "geometric",
         dimensions: str = "800x600",
@@ -107,7 +214,7 @@ def register_agentic_tools(mcp_instance=None):
                 }
 
             # Phase 2: AI SVG Generation
-            await ctx.send(f"🤖 Generating AI SVG with {model} in {style_preset} style...")
+            await ctx.info(f"🤖 Generating AI SVG with {model} in {style_preset} style...")
 
             # Generate base SVG using AI model
             svg_generation = await _generate_base_svg(
@@ -130,7 +237,7 @@ def register_agentic_tools(mcp_instance=None):
 
             # Phase 3: Inkscape Post-Processing
             if post_processing and len(post_processing) > 0:
-                await ctx.send(f"🎨 Applying Inkscape post-processing: {', '.join(post_processing)}")
+                await ctx.info(f"🎨 Applying Inkscape post-processing: {', '.join(post_processing)}")
 
                 processed_svg_path = await _apply_inkscape_processing(
                     base_svg_path=base_svg_path,
@@ -144,7 +251,7 @@ def register_agentic_tools(mcp_instance=None):
                 else:
                     final_svg_path = base_svg_path
                     processing_applied = []
-                    await ctx.send("⚠️ Post-processing failed, using original SVG")
+                    await ctx.info("⚠️ Post-processing failed, using original SVG")
             else:
                 final_svg_path = base_svg_path
                 processing_applied = []
@@ -194,7 +301,7 @@ def register_agentic_tools(mcp_instance=None):
                 ]
             }
 
-            await ctx.send(f"✅ SVG generated successfully! Saved as: {enhanced_svg_path.name}")
+            await ctx.info(f"✅ SVG generated successfully! Saved as: {Path(enhanced_svg_path).name}")
             return result
 
         except Exception as e:
@@ -398,28 +505,46 @@ async def _generate_base_svg(
     """
     Generate base SVG using AI model.
 
-    In production, this would integrate with actual AI SVG generation APIs.
-    For now, creates a placeholder implementation.
+    When model is 'nano-banana-pro' and RECRAFT_API_TOKEN is set, calls the
+    Recraft vector generation API.  Falls back to a local placeholder SVG when
+    the token is absent or the model is 'flux-dev'.
     """
     try:
-        # Create output directory if it doesn't exist
         output_dir = Path("generated_svgs")
         output_dir.mkdir(exist_ok=True)
 
-        # Generate unique filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         svg_hash = hashlib.md5(description.encode()).hexdigest()[:8]
         filename = f"ai_{timestamp}_{svg_hash}_{width}x{height}.svg"
         svg_path = output_dir / filename
 
-        # Create a placeholder SVG based on the description and style
-        await _create_placeholder_svg(svg_path, width, height, description, style_preset)
+        recraft_token = os.environ.get("RECRAFT_API_TOKEN", "").strip()
+
+        if model == "nano-banana-pro" and recraft_token:
+            logger.info("Using Recraft API for SVG generation")
+            svg_content = await _call_recraft_api(
+                description=description,
+                style_preset=style_preset,
+                width=width,
+                height=height,
+                quality=quality,
+            )
+            svg_path.write_text(svg_content, encoding="utf-8")
+            generation_time = "recraft-api"
+        else:
+            if model == "nano-banana-pro" and not recraft_token:
+                logger.warning(
+                    "RECRAFT_API_TOKEN not set — falling back to placeholder SVG. "
+                    "Set RECRAFT_API_TOKEN to enable AI generation."
+                )
+            await _create_placeholder_svg(svg_path, width, height, description, style_preset)
+            generation_time = "simulated"
 
         return {
             "success": True,
             "svg_path": svg_path,
             "model_used": model,
-            "generation_time": "simulated",
+            "generation_time": generation_time,
             "metadata": {
                 "description": description,
                 "style_preset": style_preset,

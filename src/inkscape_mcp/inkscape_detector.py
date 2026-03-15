@@ -10,7 +10,11 @@ import os
 import platform
 import re
 import subprocess
-import winreg
+import sys
+
+if sys.platform == "win32":
+    import winreg
+
 from pathlib import Path
 from typing import List, Optional
 

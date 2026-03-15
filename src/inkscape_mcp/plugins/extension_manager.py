@@ -125,6 +125,15 @@ class ExtensionManager:
             tree = ET.parse(inx_file)
             root = tree.getroot()
 
+            # Inkscape .inx files use a default namespace on every element
+            # (xmlns="http://www.inkscape.org/namespace/inkscape/extension").
+            # ElementTree prefixes all tag names with the namespace URI, making
+            # plain XPath like ".//id" fail.  Strip the namespace from every
+            # element so the rest of the code can use simple tag names.
+            for elem in root.iter():
+                if "}" in elem.tag:
+                    elem.tag = elem.tag.split("}", 1)[1]
+
             # Extract basic metadata
             ext_id = root.find(".//id")
             if ext_id is None or not ext_id.text:
@@ -167,11 +176,14 @@ class ExtensionManager:
                     required=param.get("required", "false").lower() == "true"
                 ))
 
-            # Determine category from menu path
+            # Determine category from menu path.
+            # The submenu name is stored in the 'name' attribute, not as text content.
             category = "general"
             menu_elem = root.find(".//effects-menu/submenu")
-            if menu_elem is not None and menu_elem.text:
-                category = menu_elem.text.lower().replace(" ", "_")
+            if menu_elem is not None:
+                submenu_name = menu_elem.get("name") or menu_elem.text or ""
+                if submenu_name:
+                    category = submenu_name.lower().replace(" ", "_")
 
             return InkscapeExtension(
                 id=ext_id.text,

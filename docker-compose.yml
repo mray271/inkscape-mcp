@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Main Inkscape MCP Server
+  # Main Inkscape MCP Server (HTTP mode)
   inkscape-mcp:
     build:
       context: .
@@ -12,12 +12,21 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
+      - type: bind
+        source: ./config.yaml
+        target: /app/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./generated_svgs:/app/generated_svgs
+    env_file:
+      - .env
     environment:
       - INKSCAPE_MCP_CONFIG_PATH=/app/config.yaml
       - INKSCAPE_MCP_LOG_LEVEL=INFO
+    command: ["inkscape-mcp", "--mode", "http", "--host", "0.0.0.0", "--port", "8000"]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import inkscape_mcp; print('OK')"]
@@ -25,6 +34,26 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - inkscape-network
+
+  # Jupyter Notebook service
+  jupyter:
+    build:
+      context: .
+      target: jupyter
+    container_name: inkscape-mcp-jupyter
+    ports:
+      - "8889:8888"
+    volumes:
+      - ./notebooks:/notebooks
+      - ./generated_svgs:/notebooks/generated_svgs
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app/src
+    depends_on:
+      - inkscape-mcp
     networks:
       - inkscape-network
 
@@ -39,11 +68,13 @@ services:
     volumes:
       - .:/app
       - ./config.dev.yaml:/app/config.yaml:ro
+    env_file:
+      - .env
     environment:
       - INKSCAPE_MCP_CONFIG_PATH=/app/config.yaml
       - INKSCAPE_MCP_LOG_LEVEL=DEBUG
       - PYTHONPATH=/app/src
-    command: python -m uvicorn inkscape_mcp.main:app --host 0.0.0.0 --port 8000 --reload
+    command: inkscape-mcp --mode http --host 0.0.0.0 --port 8000 --log-level DEBUG
     profiles:
       - dev
     networks:
@@ -57,6 +88,8 @@ services:
     container_name: inkscape-mcp-test
     volumes:
       - .:/app
+    env_file:
+      - .env
     environment:
       - PYTHONPATH=/app/src
     command: pytest tests/ -v --tb=short --cov=src/inkscape_mcp
@@ -103,16 +136,3 @@ networks:
 volumes:
   redis_data:
   postgres_data:
-
-# Development override
-x-dev-overrides: &dev-overrides
-  environment:
-    - INKSCAPE_MCP_LOG_LEVEL=DEBUG
-    - INKSCAPE_MCP_DEBUG=true
-
-# Production override
-x-prod-overrides: &prod-overrides
-  environment:
-    - INKSCAPE_MCP_LOG_LEVEL=INFO
-    - INKSCAPE_MCP_DEBUG=false
-  restart: unless-stopped

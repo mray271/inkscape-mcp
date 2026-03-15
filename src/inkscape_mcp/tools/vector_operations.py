@@ -331,6 +331,10 @@ Errors:
 """
 
 import time
+import asyncio
+import tempfile
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel
@@ -509,36 +513,109 @@ async def _trace_image(
 async def _generate_barcode_qr(
     barcode_data: str, output_path: str, cli_wrapper: Any, config: Any
 ) -> Dict[str, Any]:
-    """Generate QR code or barcode."""
+    """Generate a real QR code SVG.
+
+    Primary: segno (pure-Python, no display required, works headlessly in Docker).
+    Fallback: Inkscape's bundled render_barcode_qrcode.py extension script.
+    """
+    start_time = time.time()
     try:
-        # Create basic SVG with QR-like pattern (placeholder implementation)
-        svg_template = '''<?xml version="1.0" encoding="UTF-8"?>
-<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
-  <rect width="200" height="200" fill="white"/>
-  <text x="100" y="100" text-anchor="middle" font-family="monospace" font-size="12">
-    {barcode_data}
-  </text>
-</svg>'''
-        svg_content = svg_template.format(barcode_data=barcode_data)
+        if not barcode_data:
+            raise ValueError("barcode_data must not be empty")
 
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(svg_content)
+        # ── Primary: segno ────────────────────────────────────────────────
+        try:
+            import segno  # type: ignore
 
+            qr = segno.make(barcode_data, error="m")
+            # scale=10 → each module is 10 SVG units; border=4 is the quiet zone
+            qr.save(output_path, kind="svg", scale=10, border=4, dark="#000000", light="#ffffff")
+
+            elapsed = (time.time() - start_time) * 1000
+            return VectorOperationResult(
+                success=True,
+                operation="generate_barcode_qr",
+                message=f"QR code generated (segno) for: {barcode_data}",
+                data={"output_path": output_path, "data": barcode_data, "type": "qr",
+                      "generator": "segno"},
+                execution_time_ms=elapsed,
+            ).model_dump()
+
+        except ImportError:
+            pass  # fall through to Inkscape extension script
+
+        # ── Fallback: Inkscape extension script ───────────────────────────
+        ext_candidates = [
+            "/usr/share/inkscape/extensions/render_barcode_qrcode.py",
+            "/usr/local/share/inkscape/extensions/render_barcode_qrcode.py",
+        ]
+        ext_script = next((p for p in ext_candidates if Path(p).exists()), None)
+        if not ext_script:
+            raise FileNotFoundError(
+                "Neither 'segno' nor the Inkscape QR extension script is available. "
+                "Install segno: pip install segno"
+            )
+
+        blank_svg = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<svg xmlns="http://www.w3.org/2000/svg"'
+            ' width="200" height="200" viewBox="0 0 200 200"/>'
+        )
+        with tempfile.NamedTemporaryFile(
+            suffix=".svg", delete=False, mode="w", encoding="utf-8"
+        ) as tmp:
+            tmp.write(blank_svg)
+            tmp_path = tmp.name
+
+        try:
+            cmd = [
+                "python3", ext_script,
+                "--text", barcode_data,
+                "--typenumber", "0",
+                "--correctionlevel", "0",
+                "--modulesize", "4",
+                "--drawtype", "smooth",
+                "--output", output_path,
+                tmp_path,
+            ]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            timeout = config.process_timeout if config and config.process_timeout else 60
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+
+            if proc.returncode != 0:
+                raise RuntimeError(
+                    f"Inkscape QR extension failed (rc={proc.returncode}): "
+                    f"{stderr.decode(errors='replace')[:500]}"
+                )
+            if not Path(output_path).exists() or Path(output_path).stat().st_size < 500:
+                raise RuntimeError(
+                    "Inkscape QR extension produced empty output. "
+                    f"stderr: {stderr.decode(errors='replace')[:300]}"
+                )
+        finally:
+            os.unlink(tmp_path)
+
+        elapsed = (time.time() - start_time) * 1000
         return VectorOperationResult(
             success=True,
             operation="generate_barcode_qr",
-            message=f"Generated barcode/QR for: {barcode_data}",
-            data={"output_path": output_path, "data": barcode_data, "type": "qr"},
-            execution_time_ms=(time.time() - time.time()) * 1000,
+            message=f"QR code generated (inkscape-ext) for: {barcode_data}",
+            data={"output_path": output_path, "data": barcode_data, "type": "qr",
+                  "generator": "inkscape-ext"},
+            execution_time_ms=elapsed,
         ).model_dump()
 
     except Exception as e:
         return VectorOperationResult(
             success=False,
             operation="generate_barcode_qr",
-            message=f"Barcode generation failed: {e}",
+            message=f"QR code generation failed: {e}",
             data={},
-            execution_time_ms=0,
+            execution_time_ms=(time.time() - start_time) * 1000,
             error=str(e),
         ).model_dump()
 

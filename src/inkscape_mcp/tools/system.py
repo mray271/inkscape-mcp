@@ -223,6 +223,8 @@ from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel
 
+from ..plugins.extension_manager import ExtensionManager
+
 
 class SystemResult(BaseModel):
     """Result model for system operations."""
@@ -327,22 +329,23 @@ async def inkscape_system(
             ).model_dump()
 
         elif operation == "list_extensions":
-            # Extension system disabled - plugins directory removed
+            mgr = ExtensionManager(cli_wrapper=cli_wrapper, config=config)
+            mgr.discover_extensions()
+            extensions = mgr.list_extensions()
+            categories = sorted({e.get("category", "other") for e in extensions})
             return SystemResult(
                 success=True,
                 operation="list_extensions",
-                message="Extension system disabled - plugins directory removed",
+                message=f"Found {len(extensions)} Inkscape extensions",
                 data={
-                    "extensions": [],
-                    "total_count": 0,
-                    "categories": [],
-                    "note": "Extension system temporarily disabled"
+                    "extensions": extensions,
+                    "total_count": len(extensions),
+                    "categories": categories,
                 },
                 execution_time_ms=(time.time() - start_time) * 1000,
             ).model_dump()
 
         elif operation == "execute_extension":
-            # Extension system disabled - plugins directory removed
             if not extension_id:
                 return SystemResult(
                     success=False,
@@ -352,12 +355,24 @@ async def inkscape_system(
                     execution_time_ms=(time.time() - start_time) * 1000,
                 ).model_dump()
 
+            mgr = ExtensionManager(cli_wrapper=cli_wrapper, config=config)
+            mgr.discover_extensions()
+            result = await mgr.execute_extension(
+                extension_id=extension_id,
+                input_file=extension_params.get("input_file") if extension_params else None,
+                output_file=extension_params.get("output_file") if extension_params else None,
+                parameters={
+                    k: v for k, v in (extension_params or {}).items()
+                    if k not in ("input_file", "output_file")
+                },
+            )
+            ext_error = result.get("error") or ""
             return SystemResult(
-                success=False,
+                success=result.get("success", False),
                 operation="execute_extension",
-                message=f"Extension system disabled - cannot execute {extension_id}",
-                error="Extension system temporarily disabled",
-                data={"note": "Extension system temporarily disabled"},
+                message=ext_error or f"Extension '{extension_id}' executed",
+                error=ext_error,
+                data=result,
                 execution_time_ms=(time.time() - start_time) * 1000,
             ).model_dump()
 

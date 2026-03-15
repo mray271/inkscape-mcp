@@ -26,6 +26,8 @@ RUN apt-get update && apt-get install -y \
     libwebp-dev \
     libharfbuzz-dev \
     libfribidi-dev \
+    # Virtual framebuffer — lets Inkscape (and its GTK extensions) run headlessly
+    xvfb \
     # System utilities
     curl \
     git \
@@ -33,22 +35,22 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN groupadd -r inkscape && useradd -r -g inkscape inkscape
+# Create non-root user with a home directory
+RUN groupadd -r -g 1000 inkscape && useradd -r -u 1000 -g inkscape -m -d /home/inkscape inkscape
 
 # Set work directory
 WORKDIR /app
 
 # Copy and install Python dependencies
-COPY pyproject.toml ./
-RUN pip install --upgrade pip \
-    && pip install -e .
-
-# Copy source code
+COPY pyproject.toml README.md ./
 COPY src/ ./src/
+RUN pip install --upgrade pip \
+    && pip install . \
+    && pip install segno
 
-# Change ownership to non-root user
-RUN chown -R inkscape:inkscape /app
+# Create runtime-writable directories and set ownership
+RUN mkdir -p /app/generated_svgs /app/logs /app/data \
+    && chown -R inkscape:inkscape /app /home/inkscape
 USER inkscape
 
 # Health check
@@ -79,6 +81,38 @@ USER inkscape
 
 # Development command
 CMD ["sleep", "infinity"]
+
+# --- Jupyter stage ---
+FROM base as jupyter
+
+USER root
+
+# Install Jupyter and kernel
+RUN pip install --no-cache-dir \
+    jupyter \
+    notebook \
+    ipykernel \
+    ipywidgets
+
+# Register the kernel so notebooks can import inkscape_mcp
+RUN python -m ipykernel install --sys-prefix --name inkscape-mcp --display-name "Python (inkscape-mcp)"
+
+# Notebook working directory — created fresh for jupyter stage
+RUN mkdir -p /notebooks && chown inkscape:inkscape /notebooks
+
+USER inkscape
+WORKDIR /notebooks
+ENV HOME=/home/inkscape
+
+EXPOSE 8888
+
+CMD ["jupyter", "notebook", \
+     "--ip=0.0.0.0", \
+     "--port=8888", \
+     "--no-browser", \
+     "--ServerApp.token=", \
+     "--ServerApp.password=", \
+     "--ServerApp.notebook_dir=/notebooks"]
 
 # --- Production stage ---
 FROM base as production

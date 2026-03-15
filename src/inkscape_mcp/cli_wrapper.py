@@ -7,10 +7,24 @@ This module provides core Inkscape command-line functionality for MCP operations
 import asyncio
 import logging
 import os
+import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+def _xvfb_prefix() -> List[str]:
+    """Return ['xvfb-run', '-a'] when running headlessly (no $DISPLAY) and xvfb-run
+    is available, otherwise return an empty list.
+
+    This allows Inkscape's GTK event loop — required by extensions invoked via
+    --actions or --extension — to initialise without a real display.
+    """
+    if os.environ.get("DISPLAY"):
+        return []
+    if shutil.which("xvfb-run"):
+        return ["xvfb-run", "-a"]
+    return []
 
 
 class InkscapeCliError(Exception):
@@ -304,11 +318,17 @@ class InkscapeCliWrapper:
     async def _execute_command(self, cmd_args: List[str], timeout: int) -> str:
         """
         Execute command with proper error handling and logging.
+
+        When no $DISPLAY is set (e.g. Docker) and xvfb-run is available, the
+        command is automatically wrapped with 'xvfb-run -a' so Inkscape's GTK
+        event loop can initialise.  This is required for --actions/--extension
+        calls that dispatch through the GUI extension pipeline.
         """
+        full_cmd = _xvfb_prefix() + list(cmd_args)
         try:
             # Use asyncio.create_subprocess_exec for better async handling
             process = await asyncio.create_subprocess_exec(
-                *cmd_args,
+                *full_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=self._get_environment(),
@@ -335,7 +355,8 @@ class InkscapeCliWrapper:
 
         except FileNotFoundError:
             raise InkscapeExecutionError(
-                f"Inkscape executable not found: {self.config.inkscape_executable}"
+                f"Executable not found — command: {full_cmd[0]!r}. "
+                f"Inkscape path: {self.config.inkscape_executable}"
             )
         except Exception as e:
             raise InkscapeExecutionError(f"Command execution failed: {e}")
