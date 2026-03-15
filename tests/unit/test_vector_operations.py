@@ -2,7 +2,8 @@
 Unit tests for Inkscape vector operations tool.
 """
 
-from unittest.mock import AsyncMock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from inkscape_mcp.tools.vector_operations import inkscape_vector
@@ -134,19 +135,36 @@ class TestInkscapeVectorTool:
 
     @pytest.mark.asyncio
     async def test_generate_barcode_qr(self, mock_wrapper, mock_config, temp_file):
-        """Test QR code generation."""
-        mock_wrapper._execute_actions.return_value = (0, "QR generated", "")
+        """Test QR code generation via Inkscape extension."""
+        temp_file.write_bytes(b"<svg>" + b"x" * 600)
+        mock_config.process_timeout = 30.0
 
-        result = await inkscape_vector(
-            operation="generate_barcode_qr",
-            output_path=str(temp_file),
-            barcode_data="test data",
-            cli_wrapper=mock_wrapper,
-            config=mock_config,
-        )
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+
+        ext_path = "/usr/share/inkscape/extensions/render_barcode_qrcode.py"
+
+        def path_exists(self):
+            return str(self) in (ext_path, str(temp_file))
+
+        stat_result = MagicMock()
+        stat_result.st_size = 600
+
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc), \
+             patch.object(Path, "exists", path_exists), \
+             patch.object(Path, "stat", lambda self: stat_result):
+            result = await inkscape_vector(
+                operation="generate_barcode_qr",
+                output_path=str(temp_file),
+                barcode_data="test data",
+                cli_wrapper=mock_wrapper,
+                config=mock_config,
+            )
 
         assert result["success"] is True
-        assert "generated successfully" in result["message"]
+        assert "QR code generated" in result["message"]
+        assert result["data"]["generator"] == "inkscape-ext"
 
     @pytest.mark.asyncio
     async def test_generate_laser_dot(self, mock_wrapper, mock_config, temp_file):

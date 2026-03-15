@@ -513,38 +513,12 @@ async def _trace_image(
 async def _generate_barcode_qr(
     barcode_data: str, output_path: str, cli_wrapper: Any, config: Any
 ) -> Dict[str, Any]:
-    """Generate a real QR code SVG.
-
-    Primary: segno (pure-Python, no display required, works headlessly in Docker).
-    Fallback: Inkscape's bundled render_barcode_qrcode.py extension script.
-    """
+    """Generate a QR code SVG using Inkscape's bundled render_barcode_qrcode.py extension."""
     start_time = time.time()
     try:
         if not barcode_data:
             raise ValueError("barcode_data must not be empty")
 
-        # ── Primary: segno ────────────────────────────────────────────────
-        try:
-            import segno  # type: ignore
-
-            qr = segno.make(barcode_data, error="m")
-            # scale=10 → each module is 10 SVG units; border=4 is the quiet zone
-            qr.save(output_path, kind="svg", scale=10, border=4, dark="#000000", light="#ffffff")
-
-            elapsed = (time.time() - start_time) * 1000
-            return VectorOperationResult(
-                success=True,
-                operation="generate_barcode_qr",
-                message=f"QR code generated (segno) for: {barcode_data}",
-                data={"output_path": output_path, "data": barcode_data, "type": "qr",
-                      "generator": "segno"},
-                execution_time_ms=elapsed,
-            ).model_dump()
-
-        except ImportError:
-            pass  # fall through to Inkscape extension script
-
-        # ── Fallback: Inkscape extension script ───────────────────────────
         ext_candidates = [
             "/usr/share/inkscape/extensions/render_barcode_qrcode.py",
             "/usr/local/share/inkscape/extensions/render_barcode_qrcode.py",
@@ -552,8 +526,8 @@ async def _generate_barcode_qr(
         ext_script = next((p for p in ext_candidates if Path(p).exists()), None)
         if not ext_script:
             raise FileNotFoundError(
-                "Neither 'segno' nor the Inkscape QR extension script is available. "
-                "Install segno: pip install segno"
+                "Inkscape QR extension script (render_barcode_qrcode.py) is not available. "
+                "Ensure Inkscape is installed with its extensions."
             )
 
         blank_svg = (

@@ -57,9 +57,6 @@ dependencies = [
     # Logging
     "loguru>=0.7.0,<1.0.0",
 
-    # QR code / barcode generation (SVG-native output)
-    "segno>=1.6.0,<2.0.0",
-
     # Required by Inkscape extensions (inkex transitive dependencies).
     # inkex needs: lxml, tinycss2, cssselect, scour, pyparsing, packaging, pyserial.
     # numpy and Pillow are already declared above.  PyGObject is a system library
