@@ -60,8 +60,17 @@ dependencies = [
     # QR code / barcode generation (SVG-native output)
     "segno>=1.6.0,<2.0.0",
 
-    # Required by Inkscape extensions (inkex library uses lxml for SVG parsing)
+    # Required by Inkscape extensions (inkex transitive dependencies).
+    # inkex needs: lxml, tinycss2, cssselect, scour, pyparsing, packaging, pyserial.
+    # numpy and Pillow are already declared above.  PyGObject is a system library
+    # (libgobject) installed via apt in the Dockerfile, not via pip.
     "lxml>=4.9.0,<6.0.0",
+    "tinycss2>=1.1.0,<2.0.0",
+    "cssselect>=1.2.0,<2.0.0",
+    "scour>=0.38.2,<1.0.0",
+    "pyparsing>=3.0.0,<4.0.0",
+    "packaging>=23.0",
+    "pyserial>=3.5,<4.0.0",
 
     # Async utilities
     "anyio>=4.5.0,<5.0.0",
