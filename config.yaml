@@ -1,0 +1,54 @@
+# Inkscape MCP Server Configuration
+# This file configures the Inkscape MCP server behaviour and settings.
+# All values shown are defaults — uncomment and edit as needed.
+
+# Inkscape Configuration
+# inkscape_executable: "/usr/bin/inkscape"  # Auto-detected if not specified
+
+# Performance Settings
+max_concurrent_processes: 3   # Number of concurrent Inkscape processes
+process_timeout: 30           # Timeout for operations in seconds
+
+# File Handling
+temp_directory: "/tmp"        # Directory for temporary files
+max_file_size_mb: 100         # Maximum file size in MB
+preserve_metadata: true       # Preserve metadata when possible
+auto_cleanup: true            # Automatically clean up temp files
+cleanup_interval: 3600        # Cleanup interval in seconds
+
+# Image Processing Defaults
+default_quality: 95           # Default JPEG quality (1-100)
+default_interpolation: "lanczos"  # Interpolation method for resizing
+
+# Supported formats
+supported_formats:
+  - "svg"
+  - "pdf"
+  - "eps"
+  - "png"
+  - "ps"
+  - "ai"
+  - "cdr"
+  - "wmf"
+  - "emf"
+  - "xaml"
+
+# Batch Processing
+enable_batch_operations: true
+batch_size_limit: 50          # Max files per batch
+
+# Extension System
+enable_extensions: true
+# extension_dirs:
+#   - "/path/to/extensions"
+# disabled_extensions:
+#   - "org.inkscape.example"
+
+# Logging and Debug
+log_level: "INFO"             # DEBUG, INFO, WARNING, ERROR
+enable_performance_logging: false
+
+# Security Settings
+enable_file_validation: true
+# allowed_directories:
+#   - "/home/user/images"
