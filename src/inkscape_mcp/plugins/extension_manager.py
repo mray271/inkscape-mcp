@@ -7,6 +7,8 @@ Extensions are Python scripts that use the inkex library to manipulate SVG docum
 
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+import asyncio
+import os
 import xml.etree.ElementTree as ET
 import logging
 from dataclasses import dataclass
@@ -227,26 +229,46 @@ class ExtensionManager:
         extension = self.extensions[extension_id]
 
         try:
-            # Build inkscape command
-            cmd = [str(self.config.inkscape_executable)]
+            # Inkscape 1.x dropped the --extension flag entirely.  Extensions
+            # are standalone Python scripts that accept parameters as CLI flags
+            # and read/write SVG via --output / positional input_file, matching
+            # the inkscape_extensions Python API.  Call the script directly so
+            # no display or GTK event loop is needed.
+            cmd = ["python3", str(extension.python_file)]
 
-            if input_file:
-                cmd.append(input_file)
-
-            # Add extension parameter
-            cmd.extend(["--extension", extension_id])
-
-            # Add custom parameters
+            # Extension parameters become --param-name value pairs
             if parameters:
                 for param_name, param_value in parameters.items():
                     cmd.extend([f"--{param_name}", str(param_value)])
 
-            # Add output handling
             if output_file:
-                cmd.extend(["--export-filename", output_file, "--export-do"])
+                cmd.extend(["--output", output_file])
 
-            # Execute the command
-            result = await self.cli_wrapper._execute_command(cmd, timeout=60)
+            if input_file:
+                cmd.append(input_file)
+
+            # Execute directly (pure Python, no Inkscape binary / GTK needed).
+            # Use cli_wrapper if available (picks up env setup + xvfb wrapping),
+            # otherwise fall back to a minimal asyncio subprocess so that
+            # execute_extension works even when Inkscape detection failed.
+            if self.cli_wrapper is not None:
+                result = await self.cli_wrapper._execute_command(cmd, timeout=60)
+            else:
+                env = os.environ.copy()
+                env.setdefault("LANG", "C.UTF-8")
+                env.setdefault("LC_ALL", "C.UTF-8")
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+                result = (stdout + stderr).decode("utf-8", errors="replace")
+                if proc.returncode != 0:
+                    raise RuntimeError(
+                        f"Extension script exited {proc.returncode}: {result}"
+                    )
 
             return {
                 "success": True,
