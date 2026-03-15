@@ -45,8 +45,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
 RUN pip install --upgrade pip \
-    && pip install . \
-    && pip install segno
+    && pip install .
 
 # Create runtime-writable directories and set ownership
 RUN mkdir -p /app/generated_svgs /app/logs /app/data \

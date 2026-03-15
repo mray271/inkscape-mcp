@@ -158,10 +158,13 @@ Errors:
 """
 
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, Literal
 
 from pydantic import BaseModel
+
+from ._utils import _parse_inkscape_float
 
 
 class FileOperationResult(BaseModel):
@@ -187,6 +190,23 @@ async def inkscape_file(
     """Inkscape file operations portmanteau tool."""
     start_time = time.time()
 
+    # Operations that require Inkscape CLI (load, convert, info use cli_wrapper).
+    # validate and list_formats are pure-Python and work without it.
+    _CLI_REQUIRED_OPS = {"load", "save", "convert", "info"}
+    if operation in _CLI_REQUIRED_OPS and cli_wrapper is None:
+        return FileOperationResult(
+            success=False,
+            operation=operation,
+            message=(
+                f"Operation '{operation}' requires the Inkscape CLI wrapper, "
+                "but it is not initialized. Ensure Inkscape is installed and "
+                "the server started successfully."
+            ),
+            data={},
+            execution_time_ms=(time.time() - start_time) * 1000,
+            error="EnvironmentError",
+        ).model_dump()
+
     try:
         input_path_obj = Path(input_path)
 
@@ -208,7 +228,7 @@ async def inkscape_file(
                     [str(config.inkscape_executable), str(input_path_obj), "--query-width"],
                     config.process_timeout,
                 )
-                width = float(result.strip())
+                width = _parse_inkscape_float(result)
 
                 return FileOperationResult(
                     success=True,
@@ -303,8 +323,8 @@ async def inkscape_file(
                     config.process_timeout,
                 )
 
-                width = float(width_result.strip())
-                height = float(height_result.strip())
+                width = _parse_inkscape_float(width_result)
+                height = _parse_inkscape_float(height_result)
 
                 return FileOperationResult(
                     success=True,
@@ -331,36 +351,44 @@ async def inkscape_file(
                 ).model_dump()
 
         elif operation == "validate":
-            # Basic validation by attempting to load
-            try:
-                result = await cli_wrapper._execute_command(
-                    [str(config.inkscape_executable), str(input_path_obj), "--query-width"],
-                    config.process_timeout,
-                )
-
-                return FileOperationResult(
-                    success=True,
-                    operation="validate",
-                    message="SVG is valid",
-                    data={
-                        "path": str(input_path_obj.resolve()),
-                        "valid": True,
-                    },
-                    execution_time_ms=(time.time() - start_time) * 1000,
-                ).model_dump()
-
-            except Exception as e:
+            if not input_path_obj.exists():
                 return FileOperationResult(
                     success=False,
                     operation="validate",
-                    message=f"SVG validation failed: {e}",
-                    data={
-                        "path": str(input_path_obj.resolve()),
-                        "valid": False,
-                    },
+                    message=f"File not found: {input_path}",
+                    data={"path": str(input_path_obj), "valid": False},
                     execution_time_ms=(time.time() - start_time) * 1000,
-                    error=str(e),
+                    error="FileNotFoundError",
                 ).model_dump()
+
+            issues = []
+            try:
+                tree = ET.parse(str(input_path_obj))
+                root = tree.getroot()
+                # Confirm root is an SVG element (namespace-aware)
+                tag = root.tag
+                if not (tag == "svg" or tag.endswith("}svg")):
+                    issues.append(f"Root element is <{tag}>, expected <svg>")
+                # Check for xmlns declaration
+                ns = root.get("xmlns", root.get("{http://www.w3.org/2000/svg}xmlns", ""))
+                if "svg" not in (ns or tag):
+                    issues.append("Missing SVG namespace declaration")
+                is_valid = len(issues) == 0
+            except ET.ParseError as parse_err:
+                issues.append(f"XML parse error: {parse_err}")
+                is_valid = False
+
+            return FileOperationResult(
+                success=True,
+                operation="validate",
+                message="SVG is valid" if is_valid else f"SVG has issues: {'; '.join(issues)}",
+                data={
+                    "path": str(input_path_obj.resolve()),
+                    "valid": is_valid,
+                    "issues": issues,
+                },
+                execution_time_ms=(time.time() - start_time) * 1000,
+            ).model_dump()
 
         elif operation == "list_formats":
             # List supported export formats

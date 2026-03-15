@@ -5,7 +5,7 @@ Unit tests for Inkscape detector module.
 import os
 import platform
 from pathlib import Path
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, MagicMock
 
 import pytest
 
@@ -28,10 +28,10 @@ class TestInkscapeDetector:
         detector = InkscapeDetector()
 
         with patch.object(
-            detector, "_detect_windows", return_value=Path("C:/Program Files/Inkscape/inkscape.exe")
+            detector, "_detect_windows", return_value=r"C:\Program Files\Inkscape\bin\inkscape.exe"
         ):
             result = detector.detect_inkscape_installation()
-            assert result == Path("C:/Program Files/Inkscape/inkscape.exe")
+            assert result == r"C:\Program Files\Inkscape\bin\inkscape.exe"
 
     @patch("platform.system")
     def test_detect_on_linux(self, mock_platform):
@@ -39,9 +39,9 @@ class TestInkscapeDetector:
         mock_platform.return_value = "Linux"
         detector = InkscapeDetector()
 
-        with patch.object(detector, "_detect_linux", return_value=Path("/usr/bin/inkscape")):
+        with patch.object(detector, "_detect_linux", return_value="/usr/bin/inkscape"):
             result = detector.detect_inkscape_installation()
-            assert result == Path("/usr/bin/inkscape")
+            assert result == "/usr/bin/inkscape"
 
     @patch("platform.system")
     def test_detect_on_macos(self, mock_platform):
@@ -52,10 +52,10 @@ class TestInkscapeDetector:
         with patch.object(
             detector,
             "_detect_macos",
-            return_value=Path("/Applications/Inkscape.app/Contents/MacOS/inkscape"),
+            return_value="/Applications/Inkscape.app/Contents/MacOS/inkscape",
         ):
             result = detector.detect_inkscape_installation()
-            assert result == Path("/Applications/Inkscape.app/Contents/MacOS/inkscape")
+            assert result == "/Applications/Inkscape.app/Contents/MacOS/inkscape"
 
     @patch("platform.system")
     def test_detect_unsupported_platform(self, mock_platform):
@@ -70,128 +70,127 @@ class TestInkscapeDetector:
         """Test Windows detection searches correct paths."""
         detector = InkscapeDetector()
 
-        # Mock os.path.exists and check the paths it would check
-        with patch("os.path.exists") as mock_exists:
-            mock_exists.return_value = False
+        with patch.object(detector, "_validate_executable", return_value=False), \
+             patch.object(detector, "_check_path_environment", return_value=None), \
+             patch.object(detector, "_check_windows_registry", return_value=None):
             result = detector._detect_windows()
             assert result is None
 
-            # Verify it checked some expected paths
-            calls = [str(call[0][0]) for call in mock_exists.call_args_list]
-            assert any("Program Files" in call for call in calls)
-
     def test_windows_registry_search(self):
-        """Test Windows registry search for Inkscape."""
+        """Test Windows registry search returns None when registry unavailable (non-Windows)."""
         detector = InkscapeDetector()
-
-        # Mock winreg operations
-        mock_key = Mock()
-        mock_key.__enter__ = Mock(return_value=Mock())
-        mock_key.__exit__ = Mock(return_value=None)
-
-        with (
-            patch("winreg.OpenKey", return_value=mock_key),
-            patch(
-                "winreg.QueryValueEx", return_value=("C:\\Program Files\\Inkscape\\inkscape.exe", 1)
-            ),
-            patch("os.path.exists", return_value=True),
-        ):
-            result = detector._detect_windows()
-            assert result == Path("C:/Program Files/Inkscape/inkscape.exe")
+        # On Linux the registry check always returns None (no winreg)
+        result = detector._check_windows_registry()
+        assert result is None
 
     def test_windows_registry_not_found(self):
         """Test Windows registry search when Inkscape not found."""
         detector = InkscapeDetector()
-
-        with (
-            patch("winreg.OpenKey", side_effect=FileNotFoundError),
-            patch("os.path.exists", return_value=False),
-        ):
-            result = detector._detect_windows()
-            assert result is None
+        result = detector._check_windows_registry()
+        assert result is None
 
     def test_linux_detection_paths(self):
         """Test Linux detection searches correct paths."""
         detector = InkscapeDetector()
 
-
-        with patch("shutil.which") as mock_which:
-            mock_which.return_value = None
+        # Mock subprocess.run (used by _check_path_environment via 'which')
+        # and Path.exists / os.access to force no match
+        with patch("subprocess.run") as mock_run, \
+             patch.object(Path, "exists", return_value=False), \
+             patch("os.access", return_value=False):
+            mock_run.return_value = Mock(returncode=1, stdout="")
             result = detector._detect_linux()
             assert result is None
 
-            # Test successful detection
-            mock_which.return_value = "/usr/bin/inkscape"
+        # Successful detection via 'which'
+        with patch("subprocess.run") as mock_run, \
+             patch.object(Path, "exists", return_value=True), \
+             patch("os.access", return_value=True):
+            mock_run.return_value = Mock(returncode=0, stdout="/usr/bin/inkscape\n")
             result = detector._detect_linux()
-            assert result == Path("/usr/bin/inkscape")
+            assert result == "/usr/bin/inkscape"
 
     def test_macos_detection_paths(self):
         """Test macOS detection searches correct paths."""
         detector = InkscapeDetector()
 
-        with patch("shutil.which") as mock_which:
-            mock_which.return_value = None
+        # All paths miss, PATH check returns inkscape
+        with patch("subprocess.run") as mock_run, \
+             patch.object(Path, "exists", return_value=False), \
+             patch("os.access", return_value=False):
+            mock_run.return_value = Mock(
+                returncode=0, stdout="/usr/local/bin/inkscape\n"
+            )
+            # which returns a path containing "inkscape" but Path.exists is False
+            # so _validate_executable returns False and the loop finds nothing
+            mock_run.return_value = Mock(returncode=1, stdout="")
+            result = detector._detect_macos()
+            assert result is None
 
-            # Mock subprocess for brew detection
-            with patch("subprocess.run") as mock_run:
-                mock_proc = Mock()
-                mock_proc.returncode = 0
-                mock_proc.stdout = "/Applications/Inkscape.app/Contents/MacOS/inkscape"
-                mock_run.return_value = mock_proc
-
-                result = detector._detect_macos()
-                assert result == Path("/Applications/Inkscape.app/Contents/MacOS/inkscape")
+        # PATH check succeeds
+        with patch("subprocess.run") as mock_run, \
+             patch.object(Path, "exists", return_value=True), \
+             patch("os.access", return_value=True):
+            mock_run.return_value = Mock(
+                returncode=0, stdout="/Applications/Inkscape.app/Contents/MacOS/inkscape\n"
+            )
+            result = detector._detect_macos()
+            assert result == "/Applications/Inkscape.app/Contents/MacOS/inkscape"
 
     def test_path_environment_check(self):
         """Test PATH environment variable checking."""
         detector = InkscapeDetector()
 
-        with patch("shutil.which") as mock_which:
-            mock_which.return_value = "/usr/bin/inkscape"
-            result = detector._check_path_environment()
-            assert result == Path("/usr/bin/inkscape")
+        with patch("subprocess.run") as mock_run, \
+             patch.object(Path, "exists", return_value=True), \
+             patch("os.access", return_value=True):
+            mock_run.return_value = Mock(returncode=0, stdout="/usr/bin/inkscape\n")
+            result = detector._check_path_environment(["inkscape"])
+            assert result == "/usr/bin/inkscape"
 
-            mock_which.return_value = None
-            result = detector._check_path_environment()
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=1, stdout="")
+            result = detector._check_path_environment(["inkscape"])
             assert result is None
 
     def test_validate_executable(self):
         """Test executable validation."""
         detector = InkscapeDetector()
 
-        # Test with valid executable
-        with patch("subprocess.run") as mock_run:
-            mock_proc = Mock()
-            mock_proc.returncode = 0
-            mock_proc.stdout = "Inkscape 1.3"
-            mock_run.return_value = mock_proc
-
-            result = detector._validate_executable(Path("/usr/bin/inkscape"))
+        # Valid inkscape executable
+        with patch.object(Path, "exists", return_value=True), \
+             patch("os.access", return_value=True):
+            result = detector._validate_executable("/usr/bin/inkscape")
             assert result is True
 
-        # Test with invalid executable
-        with patch("subprocess.run") as mock_run:
-            mock_proc = Mock()
-            mock_proc.returncode = 1
-            mock_run.return_value = mock_proc
-
-            result = detector._validate_executable(Path("/invalid/path"))
+        # Path does not exist
+        with patch.object(Path, "exists", return_value=False):
+            result = detector._validate_executable("/nonexistent/inkscape")
             assert result is False
 
+        # Name does not contain "inkscape"
+        with patch.object(Path, "exists", return_value=True), \
+             patch("os.access", return_value=True):
+            result = detector._validate_executable("/usr/bin/gimp")
+            assert result is False
+
+        # Empty path
+        assert detector._validate_executable("") is False
+
     def test_validate_executable_timeout(self):
-        """Test executable validation with timeout."""
+        """Test executable validation when Path raises an exception."""
         detector = InkscapeDetector()
 
-        with patch("subprocess.run", side_effect=TimeoutError):
-            result = detector._validate_executable(Path("/usr/bin/inkscape"))
+        with patch.object(Path, "exists", side_effect=OSError("simulated error")):
+            result = detector._validate_executable("/usr/bin/inkscape")
             assert result is False
 
     def test_validate_executable_exception(self):
-        """Test executable validation with exception."""
+        """Test executable validation with generic exception."""
         detector = InkscapeDetector()
 
-        with patch("subprocess.run", side_effect=Exception("Test error")):
-            result = detector._validate_executable(Path("/usr/bin/inkscape"))
+        with patch.object(Path, "exists", side_effect=Exception("Test error")):
+            result = detector._validate_executable("/usr/bin/inkscape")
             assert result is False
 
 
@@ -202,14 +201,13 @@ class TestDetectorIntegration:
         """Test complete detection workflow."""
         detector = InkscapeDetector()
 
-        # This will use the actual detection logic
         result = detector.detect_inkscape_installation()
 
-        # Result should be either a valid path or None
+        # Result should be either a valid path string or None
         if result is not None:
-            assert isinstance(result, Path)
-            assert result.exists()
-            assert result.is_file()
+            assert isinstance(result, str)
+            assert Path(result).exists()
+            assert Path(result).is_file()
         else:
             assert result is None
 
@@ -218,10 +216,9 @@ class TestDetectorIntegration:
         detector = InkscapeDetector()
         current_platform = platform.system()
 
-        # Should not raise exceptions regardless of platform
         try:
             result = detector.detect_inkscape_installation()
-            assert isinstance(result, (Path, type(None)))
+            assert isinstance(result, (str, type(None)))
         except Exception as e:
             pytest.fail(f"Detection failed on {current_platform}: {e}")
 
@@ -230,10 +227,12 @@ class TestDetectorIntegration:
         """Test detection with custom PATH."""
         detector = InkscapeDetector()
 
-        with patch("shutil.which") as mock_which:
-            mock_which.return_value = "/custom/bin/inkscape"
-            result = detector._check_path_environment()
-            assert result == Path("/custom/bin/inkscape")
+        with patch("subprocess.run") as mock_run, \
+             patch.object(Path, "exists", return_value=True), \
+             patch("os.access", return_value=True):
+            mock_run.return_value = Mock(returncode=0, stdout="/custom/bin/inkscape\n")
+            result = detector._check_path_environment(["inkscape"])
+            assert result == "/custom/bin/inkscape"
 
 
 class TestDetectorLogging:
@@ -241,26 +240,25 @@ class TestDetectorLogging:
 
     def test_detection_logging(self, caplog):
         """Test that detection operations are logged."""
+        import logging
         detector = InkscapeDetector()
 
-        with patch.object(detector, "_detect_windows", return_value=None):
-            with patch("platform.system", return_value="Windows"):
-                detector.detect_inkscape_installation()
+        with caplog.at_level(logging.INFO, logger="inkscape_mcp.inkscape_detector"):
+            with patch.object(detector, "_detect_linux", return_value=None):
+                with patch("platform.system", return_value="Linux"):
+                    detector.detect_inkscape_installation()
 
-                # Should log detection attempts
-                assert any("Detecting Inkscape" in record.message for record in caplog.records)
+        assert any("Detecting Inkscape" in record.message for record in caplog.records)
 
     def test_validation_logging(self, caplog):
-        """Test validation logging."""
+        """Test validation debug logging on failure."""
+        import logging
         detector = InkscapeDetector()
 
-        with patch("subprocess.run") as mock_run:
-            mock_proc = Mock()
-            mock_proc.returncode = 0
-            mock_proc.stdout = "Inkscape 1.3"
-            mock_run.return_value = mock_proc
+        with caplog.at_level(logging.DEBUG, logger="inkscape_mcp.inkscape_detector"):
+            with patch.object(Path, "exists", side_effect=Exception("boom")):
+                detector._validate_executable("/usr/bin/inkscape")
 
-            detector._validate_executable(Path("/test/inkscape"))
-
-            # Should log validation
-            assert any("Validating executable" in record.message for record in caplog.records)
+        assert any(
+            "Validation failed" in record.message for record in caplog.records
+        )

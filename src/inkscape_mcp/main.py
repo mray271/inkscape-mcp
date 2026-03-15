@@ -28,6 +28,7 @@ from typing import Optional, Dict, Any, List
 
 from fastmcp import FastMCP
 
+from .cli_wrapper import InkscapeCliWrapper
 from .config import InkscapeConfig, load_config
 from .inkscape_detector import InkscapeDetector
 from .logging_config import setup_logging
@@ -79,7 +80,7 @@ class InkscapeMCPServer:
         )
 
         self.logger = logging.getLogger(__name__)
-        self.cli_wrapper: Optional[GimpCliWrapper] = None
+        self.cli_wrapper: Optional[InkscapeCliWrapper] = None
 
     def _validate_configuration(self) -> bool:
         """
@@ -190,10 +191,10 @@ class InkscapeMCPServer:
 
                 # Initialize CLI wrapper
                 try:
-                    self.cli_wrapper = GimpCliWrapper(self.config)
-                    logger.info("Initialized GIMP CLI wrapper")
+                    self.cli_wrapper = InkscapeCliWrapper(self.config)
+                    logger.info("Initialized Inkscape CLI wrapper")
                 except Exception as e:
-                    logger.error(f"Failed to initialize GIMP CLI wrapper: {e}")
+                    logger.error(f"Failed to initialize Inkscape CLI wrapper: {e}")
                     self.cli_wrapper = None
             else:
                 logger.warning("Inkscape not found. Running in limited functionality mode")

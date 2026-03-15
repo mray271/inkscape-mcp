@@ -339,6 +339,8 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel
 
+from ._utils import _parse_inkscape_float
+
 
 class VectorOperationResult(BaseModel):
     """Result model for vector operations."""
@@ -678,10 +680,10 @@ async def _measure_object(
             config.process_timeout,
         )
 
-        x = float(x_result.strip())
-        y = float(y_result.strip())
-        width = float(width_result.strip())
-        height = float(height_result.strip())
+        x = _parse_inkscape_float(x_result)
+        y = _parse_inkscape_float(y_result)
+        width = _parse_inkscape_float(width_result)
+        height = _parse_inkscape_float(height_result)
 
         return VectorOperationResult(
             success=True,
@@ -719,8 +721,8 @@ async def _query_document(input_path: str, cli_wrapper: Any, config: Any) -> Dic
             [str(config.inkscape_executable), input_path, "--query-height"], config.process_timeout
         )
 
-        width = float(width_result.strip())
-        height = float(height_result.strip())
+        width = _parse_inkscape_float(width_result)
+        height = _parse_inkscape_float(height_result)
 
         # Count objects (simplified - would need more complex parsing)
         object_count = 1  # Placeholder

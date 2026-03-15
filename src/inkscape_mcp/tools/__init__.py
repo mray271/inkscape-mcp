@@ -16,6 +16,7 @@ from .file_operations import inkscape_file
 from .vector_operations import inkscape_vector
 from .analysis import inkscape_analysis
 from .system import inkscape_system
+from ._utils import _parse_inkscape_float
 
 __all__ = [
     "inkscape_file",

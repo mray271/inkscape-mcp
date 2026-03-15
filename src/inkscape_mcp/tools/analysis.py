@@ -195,6 +195,8 @@ from typing import Any, Dict, Literal
 
 from pydantic import BaseModel
 
+from ._utils import _parse_inkscape_float
+
 
 class AnalysisResult(BaseModel):
     """Result model for analysis operations."""
@@ -241,8 +243,8 @@ async def inkscape_analysis(
                     config.process_timeout,
                 )
 
-                width = float(width_result.strip())
-                height = float(height_result.strip())
+                width = _parse_inkscape_float(width_result)
+                height = _parse_inkscape_float(height_result)
 
                 return AnalysisResult(
                     success=True,
@@ -318,8 +320,8 @@ async def inkscape_analysis(
                     config.process_timeout,
                 )
 
-                width = float(width_result.strip())
-                height = float(height_result.strip())
+                width = _parse_inkscape_float(width_result)
+                height = _parse_inkscape_float(height_result)
 
                 return AnalysisResult(
                     success=True,

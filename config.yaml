@@ -3,7 +3,7 @@
 # All values shown are defaults — uncomment and edit as needed.
 
 # Inkscape Configuration
-# inkscape_executable: "/usr/bin/inkscape"  # Auto-detected if not specified
+inkscape_executable: "/usr/bin/inkscape"  # Auto-detected if not specified; explicit path as fallback
 
 # Performance Settings
 max_concurrent_processes: 3   # Number of concurrent Inkscape processes
