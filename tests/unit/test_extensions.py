@@ -183,15 +183,14 @@ class TestExecuteExtension:
         )
         assert manager.cli_wrapper._execute_command.called
         cmd = manager.cli_wrapper._execute_command.call_args[0][0]
-        assert cmd[0] == "/usr/bin/inkscape"
-        assert "--extension" in cmd
-        assert "test.render.one" in cmd
+        assert cmd[0] == "python3"   # direct script invocation, not inkscape binary
+        assert "--extension" not in cmd  # --extension flag removed in Inkscape 1.x
 
     @pytest.mark.asyncio
     async def test_output_file_added_to_command(self, manager):
         await manager.execute_extension("test.render.one", output_file="/tmp/out.svg")
         cmd = manager.cli_wrapper._execute_command.call_args[0][0]
-        assert "--export-filename" in cmd
+        assert "--output" in cmd
         assert "/tmp/out.svg" in cmd
 
     @pytest.mark.asyncio
